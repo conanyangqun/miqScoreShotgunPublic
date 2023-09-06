@@ -1,0 +1,95 @@
+Bootstrap: docker
+From: ubuntu:jammy
+
+%labels
+    author "yangqun"
+    github "https://github.com/conanyangqun/singularity-for-bioinformatics"
+    version "0.0.1"
+
+%help
+    modified from Zymo Research.
+
+%files
+    ./reference /biosrc/referenceBuild/reference
+    ./requirements.txt /biosrc/referenceBuild
+    ./ /biosoft/miqScoreShotgun
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+
+    apt-get update
+    # build packages
+    apt-get install -y \
+        build-essential \
+        cmake \
+        curl \
+        libncurses5-dev \
+        libbz2-dev \
+        liblzma-dev \
+        zlib1g-dev \
+        python3 \
+        python3-pip \
+        zip
+    
+    # softwares dirs.
+    for tag in biosoft biosrc
+    do
+        if [ ! -e ${tag} ]
+        then
+            mkdir ${tag}
+        fi
+    done
+    
+    if [ ! -e /biosoft/bin ]
+    then
+        mkdir -p /biosoft/bin
+    fi
+
+    # htslib v1.17
+    version="1.17"
+    base="https://github.com/samtools/"
+    for tag in htslib samtools bcftools
+    do
+        program="${tag}-${version}"
+        curl -L "${base}/${tag}/releases/download/${version}/${program}.tar.bz2" -o "${program}.tar.bz2"
+        tar xvf "${program}.tar.bz2" && cd "${program}"
+        ./configure --prefix=/biosoft && make && make install
+        cd ../
+    done
+
+    # minimap2 v2.26
+    minimap2="https://github.com/lh3/minimap2/releases/download/v2.26/minimap2-2.26_x64-linux.tar.bz2"
+    curl -L "${minimap2}" -o minimap2-2.26_x64-linux.tar.bz2
+    tar xvf minimap2-2.26_x64-linux.tar.bz2
+    mv minimap2-2.26_x64-linux /biosoft
+
+    # bwa v0.7.17
+    bwa="https://github.com/lh3/bwa/archive/v0.7.17.tar.gz"
+    curl -L "${bwa}" -o bwa.v0.7.17.tar.gz
+    tar xvf bwa.v0.7.17.tar.gz
+    cd bwa-0.7.17
+    make
+    cd /biosrc
+    cp -r /biosrc/bwa-0.7.17 /biosoft
+
+    # doing expensive and unlikely to change build processes here to speed up testing builds
+    cd /biosrc/refernceBuild
+    pip3 install -r requirements.txt
+    cd refernce
+    echo "Indexing standard genome"
+    bwa index zrCommunityStandard.fa
+    cd /biosrc
+
+    # doing cheaper and likely to change build steps now
+    cd /biosoft/miqScoreShotgun
+    rm -rf reference
+    mv /biosrc/referenceBuild/reference .
+    rm -rf /biosrc/referenceBuild
+
+    # clean up.
+    apt-get clean
+    cd / && rm -rf /biosrc
+
+%environment
+    export PATH=/biosoft/bin:$PATH
+    export PATH=/biosoft/minimap2-2.26_x64-linux/:/biosoft/bwa-0.7.17/:$PATH
