@@ -1,0 +1,26 @@
+Bootstrap: localimage
+From: /xxx/miqscore_part1.sif
+
+%files
+    ./reference /biosrc/referenceBuild/reference
+    ./requirements.txt /biosrc/referenceBuild
+    ./ /biosoft/miqScoreShotgun
+
+%post
+    # doing expensive and unlikely to change build processes here to speed up testing builds
+    cd /biosrc/refernceBuild
+    pip3 install -r requirements.txt
+    cd refernce
+    echo "Indexing standard genome"
+    bwa index zrCommunityStandard.fa
+    cd /biosrc
+
+    # doing cheaper and likely to change build steps now
+    cd /biosoft/miqScoreShotgun
+    rm -rf reference
+    mv /biosrc/referenceBuild/reference .
+    rm -rf /biosrc/referenceBuild
+
+    # clean up.
+    apt-get clean
+    cd / && rm -rf /biosrc

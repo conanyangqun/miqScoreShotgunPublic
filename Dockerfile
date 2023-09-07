@@ -1,77 +1,85 @@
-FROM python:3.6.7
+FROM ubuntu:jammy
 
-MAINTAINER Michael M. Weinstein, Zymo Research
-LABEL version="0.0.1"
+MAINTAINER yangqun
+LABEL version="0.0.2"
 
 WORKDIR /
 
 RUN apt-get update && \
-    apt install -y autoconf automake make gcc perl zlib1g-dev libbz2-dev liblzma-dev libssl-dev libncurses5-dev && \
-    cd tmp && \
-    wget https://github.com/samtools/samtools/releases/download/1.9/samtools-1.9.tar.bz2 && \
-    tar -xjvf samtools-1.9.tar.bz2 && \
-    rm samtools-1.9.tar.bz2 && \
-    cd samtools-1.9 && \
-    ./configure && \
-    make && \
-    make prefix=/opt install && \
-    cd /tmp && \
-    rm -rf samtools-1.9
+    apt install -y build-essential \
+        cmake \
+        curl \
+        libncurses5-dev \
+        libbz2-dev \
+        liblzma-dev \
+        zlib1g-dev \
+        python3 \
+        python3-pip \
+        zip \
+        git \
+    && apt-get clean
 
-ENV PATH "$PATH:/opt/bin"
+RUN mkdir -p /biosoft/bin
 
+# samtools
+RUN mkdir -p /biosrc \
+    && curl -L  "https://github.com/samtools/samtools/releases/download/1.17/samtools-1.17.tar.bz2" -o "samtools-1.17.tar.bz2" \
+    && tar xvf "samtools-1.17.tar.bz2" \
+    && cd "samtools-1.17" \
+    && ./configure --prefix=/biosoft \
+    && make \
+    && make install \
+    && cd /biosoft \
+    && rm -r /biosrc
 
-#set up BWA
-RUN cd /tmp &&\
-    wget https://github.com/lh3/bwa/archive/v0.7.16.tar.gz && \
-    tar -xvf v0.7.16.tar.gz && \
-    rm v0.7.16.tar.gz && \
-    cd bwa-0.7.16 &&\
-    make && \
-    cd /tmp && \
-    cp -r bwa-0.7.16 /opt/ && \
-    rm -rf bwa-0.7.16
+ENV PATH "/biosoft/bin:$PATH"
 
-ENV PATH "$PATH:/opt/bwa-0.7.16"
+# minimap2.
+RUN mkdir /biosrc \
+    && cd /biosrc \
+    && curl -L "https://github.com/lh3/minimap2/releases/download/v2.26/minimap2-2.26_x64-linux.tar.bz2" \
+        -o minimap2-2.26_x64-linux.tar.bz2 \
+    && tar xvf minimap2-2.26_x64-linux.tar.bz2 \
+    && mv minimap2-2.26_x64-linux /biosoft \
+    && cd / \
+    && rm -r /biosrc
 
+ENV PATH "/biosoft/minimap2-2.26_x64-linux/:$PATH"
 
-#set up minimap2
-RUN cd /tmp &&\
-    wget https://github.com/lh3/minimap2/archive/v2.17.tar.gz && \
-    tar -xvf v2.17.tar.gz && \
-    rm v2.17.tar.gz && \
-    cd minimap2-2.17 && \
-    make && \
-    cd /tmp && \
-    cp -r minimap2-2.17 /opt/ && \
-    rm -rf minimap2-2.17
+# bwa.
+RUN mkdir /biosrc \
+    && cd /biosrc \
+    && git clone https://github.com/lh3/bwa.git \
+    && cd bwa \
+    && make \
+    && cd ../ \
+    && cp -r bwa /biosoft \
+    && cd /biosoft \
+    && rm -r /biosrc
 
-ENV PATH "$PATH:/opt/minimap2-2.17"
+ENV PATH "/biosoft/bwa:$PATH"
 
+# set up scripts.
+RUN mkdir -p /biosrc/referenceBuild/reference \
+    && mkdir /biosoft/miqScoreShotgun
 
-#set up scripts
-RUN cd /opt && \
-    mkdir referenceBuild && \
-    mkdir referenceBuild/reference && \
-    mkdir miqScoreShotgun
+COPY ./reference /biosrc/referenceBuild/reference
 
-COPY ./reference /opt/referenceBuild/reference
+COPY ./requirements.txt /biosrc/referenceBuild
 
-COPY ./requirements.txt /opt/referenceBuild
+# doing expensive and unlikely to change build processes here to speed up testing builds
+RUN cd /biosrc/referenceBuild \
+    && pip3 install -r requirements.txt \
+    && cd reference \
+    && echo "Indexing standard genome" \
+    && bwa index zrCommunityStandard.fa
 
-#doing expensive and unlikely to change build processes here to speed up testing builds
-RUN cd /opt/referenceBuild/ && \
-    pip3 install -r requirements.txt && \
-    cd reference && \
-    echo "Indexing standard genome" && \
-    bwa index zrCommunityStandard.fa
+# doing cheaper and likely to change build steps now
+COPY . /biosoft/miqScoreShotgun
 
-#doing cheaper and likely to change build steps now
-COPY . /opt/miqScoreShotgun
+RUN cd /biosoft/miqScoreShotgun \
+    && rm -rf reference \
+    && mv /biosrc/referenceBuild/reference . 、
+    && rm -rf /biosrc
 
-RUN cd /opt/miqScoreShotgun && \
-    rm -rf reference && \
-    mv /opt/referenceBuild/reference . && \
-    rm -rf /opt/referenceBuild
-
-CMD ["python3", "/opt/miqScoreShotgun/analyzeStandardReads.py"]
+CMD ["python3", "/biosoft/miqScoreShotgun/analyzeStandardReads.py"]
